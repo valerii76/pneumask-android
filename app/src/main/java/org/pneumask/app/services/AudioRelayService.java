@@ -21,7 +21,6 @@ import android.util.Log;
 
 import org.pneumask.app.BuildConfig;
 
-import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AudioRelayService extends Service {
@@ -95,7 +94,7 @@ public class AudioRelayService extends Service {
         recorder = new AudioRecord(MediaRecorder.AudioSource.DEFAULT,
                 SAMPLING_RATE_IN_HZ, CHANNEL_CONFIG, AUDIO_FORMAT, BUFFER_SIZE);
         setPreferredInputDevice(recorder);
-        improveRecorder(recorder);
+        improveRecorder(recorder.getAudioSessionId());
         recorder.startRecording();
 
         mRelayingActive.set(true);
@@ -105,22 +104,23 @@ public class AudioRelayService extends Service {
 
     }
 
-    private void improveRecorder(AudioRecord recorder) {
-        int audioSessionId = recorder.getAudioSessionId();
-
+    private void improveRecorder(int audioSessionId) {
         // Turn on Android library filter for reducing background noise in recordings
         if (NoiseSuppressor.isAvailable()) {
-            NoiseSuppressor.create(audioSessionId);
+            NoiseSuppressor ns = NoiseSuppressor.create(audioSessionId);
+            ns.setEnabled(true);
         }
 
         // Android library filter for automatic volume control in recordings
         if (AutomaticGainControl.isAvailable()) {
-            AutomaticGainControl.create(audioSessionId);
+            AutomaticGainControl agc = AutomaticGainControl.create(audioSessionId);
+            agc.setEnabled(true);
         }
 
         // Android library filter for reducing echo in recordings
         if (AcousticEchoCanceler.isAvailable()) {
-            AcousticEchoCanceler.create(audioSessionId);
+            AcousticEchoCanceler ac = AcousticEchoCanceler.create(audioSessionId);
+            ac.setEnabled(true);
         }
     }
 
@@ -173,7 +173,7 @@ public class AudioRelayService extends Service {
         @Override
         public void run() {
 
-            final ByteBuffer buffer = ByteBuffer.allocateDirect(BUFFER_SIZE);
+            final short audioData[] = new short[BUFFER_SIZE];
             AudioTrack audio = new AudioTrack(streamOutput,
                     SAMPLING_RATE_IN_HZ,
                     AudioFormat.CHANNEL_OUT_MONO,
@@ -184,12 +184,14 @@ public class AudioRelayService extends Service {
             audio.play();
 
             while (isRelayingActive()) {
-                int result = recorder.read(buffer, BUFFER_SIZE);
+                int result = recorder.read(audioData, 0, BUFFER_SIZE);
+                for (int i = 0; i < result; ++i) {
+                    audioData[i] = (short) Math.min((short)(audioData[i] * 0.4f), (short)Short.MAX_VALUE);
+                }
                 if (result < 0) {
                     Log.w(TAG, "Reading of buffer failed.");
                 } else {
-                    audio.write(buffer.array(), 0, BUFFER_SIZE);
-                    buffer.clear();
+                    audio.write(audioData, 0, result);
                 }
             }
         }
