@@ -1,6 +1,7 @@
 package org.pneumask.app.fragments;
 
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -8,6 +9,7 @@ import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ImageView;
+import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.TextView;
 
@@ -20,6 +22,7 @@ import androidx.lifecycle.ViewModelProvider;
 
 import org.pneumask.app.R;
 import org.pneumask.app.interfaces.VoiceAmplificationController;
+import org.pneumask.app.services.AudioRelayService;
 import org.pneumask.app.widgets.AmplifyingControlTile;
 import org.pneumask.app.models.AppStateViewModel;
 
@@ -36,6 +39,10 @@ public class VoiceAmplifierFragment extends Fragment {
     private ImageView mStatusImageView;
     private AmplifyingControlTile mAmplifyingControlTile;
     private VoiceAmplificationController mAmpController;
+
+    private TextView mAmplifierAudioDelay;
+    private TextView mAmplifierAudioAmp;
+
     private static final String[] OUTPUTS = {"voice", "alarm", "music"};
 
     public static VoiceAmplifierFragment newInstance() {
@@ -71,6 +78,52 @@ public class VoiceAmplifierFragment extends Fragment {
         root.findViewById(R.id.amplifying_control_start_stop_button)
                 .setOnClickListener(startStopButtonClickedListener);
         mStatusImageView = root.findViewById(R.id.voice_amplifier_status_iv);
+
+        mAmplifierAudioDelay = root.findViewById(R.id.voice_amplifier_audio_delay_value);
+        mAmplifierAudioAmp = root.findViewById(R.id.voice_amplifier_audio_amp_value);
+
+        SeekBar audioDelay = root.findViewById(R.id.voice_amplifier_audio_delay);
+        audioDelay.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                int v = progress * 1;
+                mAmplifierAudioDelay.setText(String.format("%d", v));
+                Intent intent = new Intent(getActivity(), AudioRelayService.class);
+                intent.putExtra(AudioRelayService.AUDIO_DELAY, progress * 10);
+                getActivity().startService(intent);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+
+            }
+        });
+        SeekBar audioAmp = root.findViewById(R.id.voice_amplifier_audio_amp);
+        audioAmp.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                int v = progress;
+                mAmplifierAudioAmp.setText(String.format("%d", v));
+                Intent intent = new Intent(getActivity(), AudioRelayService.class);
+                intent.putExtra(AudioRelayService.AUDIO_AMP, (float)progress / 100.0f);
+                getActivity().startService(intent);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+
+            }
+        });
 
         LifecycleOwner lifecycleOwner = getViewLifecycleOwner();
         Spinner mDropdown = root.findViewById(R.id.audio_output_dropdown);

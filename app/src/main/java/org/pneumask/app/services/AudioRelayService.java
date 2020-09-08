@@ -25,6 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AudioRelayService extends Service {
 
+    public static String AUDIO_DELAY = "audio_delay";
+    public static String AUDIO_AMP = "audio_amp";
+
     private static AudioRelayService mInstance;
 
     private static final String TAG = AudioRelayService.class.getCanonicalName();
@@ -45,7 +48,7 @@ public class AudioRelayService extends Service {
      * Size of the buffer where the audio data is stored by Android
      */
     private static final int BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLING_RATE_IN_HZ,
-            CHANNEL_CONFIG, AUDIO_FORMAT);
+            CHANNEL_CONFIG, AUDIO_FORMAT) / 2;
 
     /**
      * Whether audio is currently being relayed.
@@ -60,6 +63,10 @@ public class AudioRelayService extends Service {
 
     private int streamOutput;
 
+    private float adaptiveGain = 1.0f;
+    private float audioGain = 1.0f; // Gain
+    private int audioDelay = 0; // audio delay between record and play in ms
+
     public static AudioRelayService getInstance() {
         return mInstance;
     }
@@ -73,6 +80,17 @@ public class AudioRelayService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+
+        if (intent.hasExtra(AUDIO_DELAY)) {
+            audioDelay = intent.getIntExtra(AUDIO_DELAY, 0);
+            if (recorder != null)
+                return Service.START_STICKY;
+        } else if (intent.hasExtra(AUDIO_AMP)) {
+            audioGain = intent.getFloatExtra(AUDIO_AMP, 1.0f);
+            if (recorder != null)
+                return Service.START_STICKY;
+        }
+
         // STREAM_ALARM also works, but STREAM_VOICE_CALL reduces the echo
         streamOutput = intent.getIntExtra(STREAM_KEY, AudioManager.STREAM_VOICE_CALL);
 
@@ -172,7 +190,6 @@ public class AudioRelayService extends Service {
 
         @Override
         public void run() {
-
             final short audioData[] = new short[BUFFER_SIZE];
             AudioTrack audio = new AudioTrack(streamOutput,
                     SAMPLING_RATE_IN_HZ,
@@ -185,9 +202,42 @@ public class AudioRelayService extends Service {
 
             while (isRelayingActive()) {
                 int result = recorder.read(audioData, 0, BUFFER_SIZE);
+                int drop = 0;
+                int median = 0;
+                int min = 0;
+                int max = 0;
+                int countMax = 0;
+
                 for (int i = 0; i < result; ++i) {
-                    audioData[i] = (short) Math.min((short)(audioData[i] * 0.4f), (short)Short.MAX_VALUE);
+                    short d = audioData[i];
+                    if (Math.abs(d) > (short) (Short.MAX_VALUE * 0.75f))
+                        countMax++;
                 }
+//                if (countMax > 0)
+//                    adaptiveGain /= 2.0f;
+//                else if (adaptiveGain < 1.0f)
+//                    adaptiveGain *= 2.0f;
+
+                for (int i = 0; i < result; ++i) {
+                    short d = audioData[i];
+                    audioData[i] = (short) Math.min((short)(audioData[i] * audioGain), (short)Short.MAX_VALUE);
+//                    audioData[i] = (short) Math.min((short)(audioData[i] * adaptiveGain), (short)Short.MAX_VALUE);
+                    median += audioData[i];
+                    if (min > audioData[i])
+                        min = audioData[i];
+                    if (max < audioData[i])
+                        max = audioData[i];
+
+                    if (audioData[i] == 0 && d != 0)
+                        drop++;
+                }
+                median = (int)((float)median / (float)result);
+                Log.e(TAG, "VVV: all: " + result + " dropped: " + drop + " countMax: " + countMax + " min: " + min + " max: " + max + " median: " + median);
+
+                if (audioDelay > 0) {
+                    try { Thread.sleep(audioDelay); } catch (Exception e) {}
+                }
+
                 if (result < 0) {
                     Log.w(TAG, "Reading of buffer failed.");
                 } else {
