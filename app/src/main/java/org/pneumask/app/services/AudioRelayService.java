@@ -188,6 +188,8 @@ public class AudioRelayService extends Service {
 
     private class RecordingRunnable implements Runnable {
 
+        final short speakerData[] = new short[BUFFER_SIZE * 3];
+        int currentBuffer = 0;
         @Override
         public void run() {
             final short audioData[] = new short[BUFFER_SIZE];
@@ -202,37 +204,15 @@ public class AudioRelayService extends Service {
 
             while (isRelayingActive()) {
                 int result = recorder.read(audioData, 0, BUFFER_SIZE);
-                int drop = 0;
-                int median = 0;
-                int min = 0;
-                int max = 0;
-                int countMax = 0;
-
-                for (int i = 0; i < result; ++i) {
-                    short d = audioData[i];
-                    if (Math.abs(d) > (short) (Short.MAX_VALUE * 0.75f))
-                        countMax++;
-                }
-//                if (countMax > 0)
-//                    adaptiveGain /= 2.0f;
-//                else if (adaptiveGain < 1.0f)
-//                    adaptiveGain *= 2.0f;
 
                 for (int i = 0; i < result; ++i) {
                     short d = audioData[i];
                     audioData[i] = (short) Math.min((short)(audioData[i] * audioGain), (short)Short.MAX_VALUE);
 //                    audioData[i] = (short) Math.min((short)(audioData[i] * adaptiveGain), (short)Short.MAX_VALUE);
-                    median += audioData[i];
-                    if (min > audioData[i])
-                        min = audioData[i];
-                    if (max < audioData[i])
-                        max = audioData[i];
-
-                    if (audioData[i] == 0 && d != 0)
-                        drop++;
                 }
-                median = (int)((float)median / (float)result);
-                Log.e(TAG, "VVV: all: " + result + " dropped: " + drop + " countMax: " + countMax + " min: " + min + " max: " + max + " median: " + median);
+
+                for (int i = 0; i < result; ++i)
+                    speakerData[(currentBuffer % 3)*BUFFER_SIZE + i] = audioData[i];
 
                 if (audioDelay > 0) {
                     try { Thread.sleep(audioDelay); } catch (Exception e) {}
@@ -241,8 +221,11 @@ public class AudioRelayService extends Service {
                 if (result < 0) {
                     Log.w(TAG, "Reading of buffer failed.");
                 } else {
-                    audio.write(audioData, 0, result);
+//                    audio.write(audioData, 0, result);
+                    if (currentBuffer % 3 == 0)
+                        audio.write(speakerData, 0, speakerData.length);
                 }
+                currentBuffer++;
             }
         }
     }
