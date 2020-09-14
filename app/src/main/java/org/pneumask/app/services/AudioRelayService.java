@@ -21,12 +21,16 @@ import android.util.Log;
 
 import org.pneumask.app.BuildConfig;
 
+import java.io.ByteArrayOutputStream;
+import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AudioRelayService extends Service {
 
-    public static String AUDIO_DELAY = "audio_delay";
-    public static String AUDIO_AMP = "audio_amp";
+    public static final String AUDIO_DELAY = "audio_delay";
+    public static final String AUDIO_AMP = "audio_amp";
+    public static final String AUDIO_AMP_ENABLE = "audio_amp_enable";
+    public static final String AUDIO_BUFFER_SIZE = "audio_buffer_size";
 
     private static AudioRelayService mInstance;
 
@@ -47,8 +51,9 @@ public class AudioRelayService extends Service {
     /**
      * Size of the buffer where the audio data is stored by Android
      */
-    private static final int BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLING_RATE_IN_HZ,
-            CHANNEL_CONFIG, AUDIO_FORMAT) / 2;
+    private static final int BUFFER_SIZE_MIN = AudioRecord.getMinBufferSize(SAMPLING_RATE_IN_HZ,
+            CHANNEL_CONFIG, AUDIO_FORMAT);
+    private static int BUFFER_SIZE = BUFFER_SIZE_MIN;
 
     /**
      * Whether audio is currently being relayed.
@@ -56,6 +61,8 @@ public class AudioRelayService extends Service {
     private final AtomicBoolean mRelayingActive = new AtomicBoolean(false);
 
     private AudioRecord recorder = null;
+    private AudioTrack audioTrack = null;
+    private AudioTrack audioTrackDelay = null;
 
     private Thread recordingThread = null;
 
@@ -63,9 +70,9 @@ public class AudioRelayService extends Service {
 
     private int streamOutput;
 
-    private float adaptiveGain = 1.0f;
-    private float audioGain = 1.0f; // Gain
-    private int audioDelay = 0; // audio delay between record and play in ms
+    private float audioGain = 0.2f; // Gain
+    private int audioDelayValue = 1; // audio delay between record and play in ms
+    private boolean audioGainEnable = true;
 
     public static AudioRelayService getInstance() {
         return mInstance;
@@ -82,12 +89,25 @@ public class AudioRelayService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
 
         if (intent.hasExtra(AUDIO_DELAY)) {
-            audioDelay = intent.getIntExtra(AUDIO_DELAY, 0);
-            if (recorder != null)
-                return Service.START_STICKY;
+            audioDelayValue = intent.getIntExtra(AUDIO_DELAY, 0);
+            return Service.START_STICKY;
         } else if (intent.hasExtra(AUDIO_AMP)) {
             audioGain = intent.getFloatExtra(AUDIO_AMP, 1.0f);
+            return Service.START_STICKY;
+        } else if (intent.hasExtra(AUDIO_AMP_ENABLE)) {
+            audioGainEnable = intent.getBooleanExtra(AUDIO_AMP_ENABLE, true);
+            return Service.START_STICKY;
+        } else if (intent.hasExtra(AUDIO_BUFFER_SIZE)) {
             if (recorder != null)
+                stopRelaying();
+//            try { Thread.sleep(1000); } catch (Exception e) {}
+            int v = intent.getIntExtra(AUDIO_BUFFER_SIZE, BUFFER_SIZE_MIN);
+            if (v == 0)
+                BUFFER_SIZE = BUFFER_SIZE_MIN;
+            else
+                BUFFER_SIZE = SAMPLING_RATE_IN_HZ * v;
+
+            if (recorder == null)
                 return Service.START_STICKY;
         }
 
@@ -109,11 +129,28 @@ public class AudioRelayService extends Service {
     public void startRelaying() {
         // Depending on the device one might has to change the AudioSource, e.g. to DEFAULT
         // or VOICE_COMMUNICATION
-        recorder = new AudioRecord(MediaRecorder.AudioSource.DEFAULT,
+
+        recorder = new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                 SAMPLING_RATE_IN_HZ, CHANNEL_CONFIG, AUDIO_FORMAT, BUFFER_SIZE);
         setPreferredInputDevice(recorder);
         improveRecorder(recorder.getAudioSessionId());
         recorder.startRecording();
+
+        audioTrack = new AudioTrack(streamOutput,
+                SAMPLING_RATE_IN_HZ,
+                AudioFormat.CHANNEL_OUT_MONO,
+                AUDIO_FORMAT,
+                BUFFER_SIZE,
+                AudioTrack.MODE_STREAM);
+        setPreferredOutputDevice(audioTrack);
+
+        audioTrackDelay = new AudioTrack(streamOutput,
+                SAMPLING_RATE_IN_HZ,
+                AudioFormat.CHANNEL_OUT_MONO,
+                AUDIO_FORMAT,
+                BUFFER_SIZE,
+                AudioTrack.MODE_STREAM);
+        setPreferredOutputDevice(audioTrackDelay);
 
         mRelayingActive.set(true);
 
@@ -150,6 +187,14 @@ public class AudioRelayService extends Service {
         recorder.stop();
         recorder.release();
         recorder = null;
+
+        audioTrack.stop();
+        audioTrack.release();
+        audioTrack = null;
+        audioTrackDelay.stop();
+        audioTrackDelay.release();;
+        audioTrackDelay = null;
+
         recordingThread = null;
     }
 
@@ -187,63 +232,79 @@ public class AudioRelayService extends Service {
     }
 
     private class RecordingRunnable implements Runnable {
+        private AtomicBoolean audioDone = new AtomicBoolean (true);
+        private AtomicBoolean audioDelayDone = new AtomicBoolean (true);
 
         @Override
         public void run() {
-            final short audioData[] = new short[BUFFER_SIZE];
-            AudioTrack audio = new AudioTrack(streamOutput,
-                    SAMPLING_RATE_IN_HZ,
-                    AudioFormat.CHANNEL_OUT_MONO,
-                    AUDIO_FORMAT,
-                    BUFFER_SIZE,
-                    AudioTrack.MODE_STREAM);
-            setPreferredOutputDevice(audio);
-            audio.play();
 
+            final short audioData[] = new short[BUFFER_SIZE/2];
+            final short speakerData[] = new short[BUFFER_SIZE/2];
+
+
+            final ByteArrayOutputStream audioDataCollected = new ByteArrayOutputStream();
+
+            audioTrack.play();
+            audioTrackDelay.play();
+
+            long startTime = System.currentTimeMillis();
             while (isRelayingActive()) {
-                int result = recorder.read(audioData, 0, BUFFER_SIZE);
-                int drop = 0;
-                int median = 0;
-                int min = 0;
-                int max = 0;
-                int countMax = 0;
+                final int result = recorder.read(audioData, 0, BUFFER_SIZE/2);
 
                 for (int i = 0; i < result; ++i) {
-                    short d = audioData[i];
-                    if (Math.abs(d) > (short) (Short.MAX_VALUE * 0.75f))
-                        countMax++;
-                }
-//                if (countMax > 0)
-//                    adaptiveGain /= 2.0f;
-//                else if (adaptiveGain < 1.0f)
-//                    adaptiveGain *= 2.0f;
-
-                for (int i = 0; i < result; ++i) {
-                    short d = audioData[i];
-                    audioData[i] = (short) Math.min((short)(audioData[i] * audioGain), (short)Short.MAX_VALUE);
-//                    audioData[i] = (short) Math.min((short)(audioData[i] * adaptiveGain), (short)Short.MAX_VALUE);
-                    median += audioData[i];
-                    if (min > audioData[i])
-                        min = audioData[i];
-                    if (max < audioData[i])
-                        max = audioData[i];
-
-                    if (audioData[i] == 0 && d != 0)
-                        drop++;
-                }
-                median = (int)((float)median / (float)result);
-                Log.e(TAG, "VVV: all: " + result + " dropped: " + drop + " countMax: " + countMax + " min: " + min + " max: " + max + " median: " + median);
-
-                if (audioDelay > 0) {
-                    try { Thread.sleep(audioDelay); } catch (Exception e) {}
+                    if (audioGainEnable) {
+                        if (audioData[i] >= 0)
+                            audioData[i] = (short) Math.min((short) (audioData[i] * audioGain), (short) Short.MAX_VALUE);
+                        else
+                            audioData[i] = (short) Math.max((short) (audioData[i] * audioGain), (short) Short.MIN_VALUE);
+                    }
+                    try {
+                        byte a = (byte)(audioData[i] & 0xff);
+                        byte b = (byte)((audioData[i] & 0xff00) >> 8);
+                        audioDataCollected.write(a);
+                        audioDataCollected.write(b);
+                    } catch (Exception e) {
+                        Log.e(TAG, "VVV: cant write to stream: " + e.toString());
+                    }
                 }
 
                 if (result < 0) {
                     Log.w(TAG, "Reading of buffer failed.");
                 } else {
-                    audio.write(audioData, 0, result);
+                    if (audioDone.get()) {
+                        for (int i = 0; i < result; ++i)
+                            speakerData[i] = audioData[i];
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                audioDone.set(false);
+                                audioTrack.write(speakerData, 0, result);
+                                audioDone.set(true);
+                            }
+                        }).start();
+                    }
+                    if (audioDelayValue > 0 && audioDelayDone.get()) {
+                        long currentTime = System.currentTimeMillis();
+                        if ((currentTime - startTime) >= (audioDelayValue * 1000)) {
+                            startTime = currentTime;
+
+                            final byte delayBuffer[] = audioDataCollected.toByteArray();
+                            audioDataCollected.reset();
+
+                            new Thread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    audioDelayDone.set(false);
+                                    audioTrackDelay.write(delayBuffer, 0, delayBuffer.length);
+                                    audioDelayDone.set(true);
+                                }
+                            }).start();
+                        }
+                    }
                 }
             }
+            audioTrack.stop();
+            audioTrackDelay.stop();
         }
     }
 

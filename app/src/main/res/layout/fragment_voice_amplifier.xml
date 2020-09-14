@@ -46,6 +46,33 @@
             android:layout_height="wrap_content">
 
             <LinearLayout
+                android:layout_margin="10dp"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+                <TextView
+                    android:layout_weight="3"
+                    android:text="Buf:"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"/>
+                <SeekBar
+                    android:layout_weight="1"
+                    android:id="@+id/voice_amplifier_audio_buffer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:progress="0"
+                    android:min="0"
+                    android:max="10"/>
+                <TextView
+                    android:gravity="right"
+                    android:layout_weight="3"
+                    android:id="@+id/voice_amplifier_audio_buffer_value"
+                    android:text="min"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"/>
+
+            </LinearLayout>
+            <LinearLayout
+                android:layout_margin="10dp"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content">
                 <TextView
@@ -58,37 +85,42 @@
                     android:id="@+id/voice_amplifier_audio_delay"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:max="100"/>
+                    android:progress="1"
+                    android:min="0"
+                    android:max="5"/>
                 <TextView
                     android:gravity="right"
                     android:layout_weight="3"
                     android:id="@+id/voice_amplifier_audio_delay_value"
-                    android:text="0"
+                    android:text="1"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"/>
 
             </LinearLayout>
             <LinearLayout
+                android:layout_margin="10dp"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content">
-                <TextView
-                    android:layout_weight="3"
+                <CheckBox
+                    android:id="@+id/voice_amplifier_audio_amp_enable"
+                    android:checked="true"
+                    android:layout_weight="2.5"
                     android:text="Amp: "
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"/>
                 <SeekBar
-                    android:layout_weight="1"
+                    android:layout_weight="1.5"
                     android:id="@+id/voice_amplifier_audio_amp"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:progress="100"
+                    android:progress="20"
                     android:min="1"
                     android:max="100"/>
                 <TextView
                     android:gravity="right"
                     android:layout_weight="3"
                     android:id="@+id/voice_amplifier_audio_amp_value"
-                    android:text="100"
+                    android:text="20"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"/>
             </LinearLayout>

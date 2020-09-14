@@ -8,6 +8,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.CheckBox;
+import android.widget.CompoundButton;
 import android.widget.ImageView;
 import android.widget.SeekBar;
 import android.widget.Spinner;
@@ -42,6 +44,7 @@ public class VoiceAmplifierFragment extends Fragment {
 
     private TextView mAmplifierAudioDelay;
     private TextView mAmplifierAudioAmp;
+    private TextView mAmplifierBuffer;
 
     private static final String[] OUTPUTS = {"voice", "alarm", "music"};
 
@@ -81,6 +84,37 @@ public class VoiceAmplifierFragment extends Fragment {
 
         mAmplifierAudioDelay = root.findViewById(R.id.voice_amplifier_audio_delay_value);
         mAmplifierAudioAmp = root.findViewById(R.id.voice_amplifier_audio_amp_value);
+        mAmplifierBuffer = root.findViewById(R.id.voice_amplifier_audio_buffer_value);
+
+        CheckBox ampEnable = root.findViewById(R.id.voice_amplifier_audio_amp_enable);
+        ampEnable.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                Intent intent = new Intent(getActivity(), AudioRelayService.class);
+                intent.putExtra(AudioRelayService.AUDIO_AMP_ENABLE, isChecked);
+                getActivity().startService(intent);
+            }
+        });
+
+        SeekBar audioBuffer = root.findViewById(R.id.voice_amplifier_audio_buffer);
+        audioBuffer.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (progress == 0)
+                    mAmplifierBuffer.setText("min");
+                else
+                    mAmplifierBuffer.setText(String.format("%d sec", progress));
+                Intent intent = new Intent(getActivity(), AudioRelayService.class);
+                intent.putExtra(AudioRelayService.AUDIO_BUFFER_SIZE, progress);
+                getActivity().startService(intent);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) { }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) { }
+        });
 
         SeekBar audioDelay = root.findViewById(R.id.voice_amplifier_audio_delay);
         audioDelay.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -89,19 +123,15 @@ public class VoiceAmplifierFragment extends Fragment {
                 int v = progress * 1;
                 mAmplifierAudioDelay.setText(String.format("%d", v));
                 Intent intent = new Intent(getActivity(), AudioRelayService.class);
-                intent.putExtra(AudioRelayService.AUDIO_DELAY, progress * 10);
+                intent.putExtra(AudioRelayService.AUDIO_DELAY, progress);
                 getActivity().startService(intent);
             }
 
             @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {
-
-            }
+            public void onStartTrackingTouch(SeekBar seekBar) { }
 
             @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {
-
-            }
+            public void onStopTrackingTouch(SeekBar seekBar) { }
         });
         SeekBar audioAmp = root.findViewById(R.id.voice_amplifier_audio_amp);
         audioAmp.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
