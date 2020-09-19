@@ -18,11 +18,11 @@ import android.media.audiofx.NoiseSuppressor;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
+import android.widget.Toast;
 
 import org.pneumask.app.BuildConfig;
 
 import java.io.ByteArrayOutputStream;
-import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AudioRelayService extends Service {
@@ -31,6 +31,7 @@ public class AudioRelayService extends Service {
     public static final String AUDIO_AMP = "audio_amp";
     public static final String AUDIO_AMP_ENABLE = "audio_amp_enable";
     public static final String AUDIO_BUFFER_SIZE = "audio_buffer_size";
+    public static final String AUDIO_OUTPUT_DEVICE = "audio_output_device";
 
     private static AudioRelayService mInstance;
 
@@ -73,10 +74,13 @@ public class AudioRelayService extends Service {
     private float audioGain = 0.2f; // Gain
     private int audioDelayValue = 1; // audio delay between record and play in ms
     private boolean audioGainEnable = true;
+    private static int audioOutputDevice = AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
 
     public static AudioRelayService getInstance() {
         return mInstance;
     }
+
+    public static int currentOutputAudioDevice() { return audioOutputDevice; }
 
     @Override
     public void onCreate() {
@@ -100,7 +104,6 @@ public class AudioRelayService extends Service {
         } else if (intent.hasExtra(AUDIO_BUFFER_SIZE)) {
             if (recorder != null)
                 stopRelaying();
-//            try { Thread.sleep(1000); } catch (Exception e) {}
             int v = intent.getIntExtra(AUDIO_BUFFER_SIZE, BUFFER_SIZE_MIN);
             if (v == 0)
                 BUFFER_SIZE = BUFFER_SIZE_MIN;
@@ -109,6 +112,13 @@ public class AudioRelayService extends Service {
 
             if (recorder == null)
                 return Service.START_STICKY;
+        } else if (intent.hasExtra(AUDIO_OUTPUT_DEVICE)) {
+            audioOutputDevice = intent.getIntExtra(AUDIO_OUTPUT_DEVICE, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER);
+            if (audioTrack != null && audioTrackDelay != null) {
+                setPreferredOutputDevice(audioTrack);
+                setPreferredOutputDevice(audioTrackDelay);
+            }
+            return Service.START_STICKY;
         }
 
         // STREAM_ALARM also works, but STREAM_VOICE_CALL reduces the echo
@@ -362,14 +372,20 @@ public class AudioRelayService extends Service {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
             AudioDeviceInfo[] outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
             for (AudioDeviceInfo output : outputs) {
-                if (output.getType() == AudioDeviceInfo.TYPE_AUX_LINE ||
-                        output.getType() == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
-                        output.getType() == AudioDeviceInfo.TYPE_WIRED_HEADSET) {
-                    audio.setPreferredDevice(output);
+                if (output.getType() == audioOutputDevice) {
+                    boolean res = audio.setPreferredDevice(output);
+                    if (!res)
+                        Log.e(TAG, "Failed to set preferred output device: " + output.getType());
                     break;
-                } else if (output.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-                    audio.setPreferredDevice(output);
                 }
+//                if (output.getType() == AudioDeviceInfo.TYPE_AUX_LINE ||
+//                        output.getType() == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+//                        output.getType() == AudioDeviceInfo.TYPE_WIRED_HEADSET) {
+//                    audio.setPreferredDevice(output);
+//                    break;
+//                } else if (output.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+//                    audio.setPreferredDevice(output);
+//                }
             }
         }
     }

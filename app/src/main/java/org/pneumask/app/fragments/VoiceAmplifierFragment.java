@@ -1,7 +1,10 @@
 package org.pneumask.app.fragments;
 
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.Intent;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -28,6 +31,11 @@ import org.pneumask.app.services.AudioRelayService;
 import org.pneumask.app.widgets.AmplifyingControlTile;
 import org.pneumask.app.models.AppStateViewModel;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 public class VoiceAmplifierFragment extends Fragment {
@@ -45,6 +53,9 @@ public class VoiceAmplifierFragment extends Fragment {
     private TextView mAmplifierAudioDelay;
     private TextView mAmplifierAudioAmp;
     private TextView mAmplifierBuffer;
+    private Spinner mAmplifierOuputAudioDevices;
+
+    private List<Integer> outputAudioDevices = new ArrayList<>();
 
     private static final String[] OUTPUTS = {"voice", "alarm", "music"};
 
@@ -85,6 +96,22 @@ public class VoiceAmplifierFragment extends Fragment {
         mAmplifierAudioDelay = root.findViewById(R.id.voice_amplifier_audio_delay_value);
         mAmplifierAudioAmp = root.findViewById(R.id.voice_amplifier_audio_amp_value);
         mAmplifierBuffer = root.findViewById(R.id.voice_amplifier_audio_buffer_value);
+
+        mAmplifierOuputAudioDevices = root.findViewById(R.id.voice_amplifier_audio_output_devices);
+        updateOutputAudioDevices();
+        mAmplifierOuputAudioDevices.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                Intent intent = new Intent(getActivity(), AudioRelayService.class);
+                intent.putExtra(AudioRelayService.AUDIO_OUTPUT_DEVICE, outputAudioDevices.get(position));
+                getActivity().startService(intent);
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+
+            }
+        });
 
         CheckBox ampEnable = root.findViewById(R.id.voice_amplifier_audio_amp_enable);
         ampEnable.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
@@ -195,6 +222,7 @@ public class VoiceAmplifierFragment extends Fragment {
                     }
                 }
                 updateBackgroundImage(mode);
+                updateOutputAudioDevices();
             }
         });
         mPageViewModel.getMicBatteryPercentage().observe(lifecycleOwner, new Observer<Integer>() {
@@ -204,6 +232,52 @@ public class VoiceAmplifierFragment extends Fragment {
             }
         });
         return root;
+    }
+
+    private static final Map<Integer, String>  deviceTypes;
+    static {
+        Map<Integer, String> iMap = new HashMap<>();
+        iMap.put(AudioDeviceInfo.TYPE_AUX_LINE, "AUX");
+        iMap.put(AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, "A2DP");
+        iMap.put(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, "SCO");
+        iMap.put(AudioDeviceInfo.TYPE_BUILTIN_EARPIECE,  "EARPIECE");
+        iMap.put(AudioDeviceInfo.TYPE_BUILTIN_MIC,  "MIC");
+        iMap.put(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, "SPEAKER");
+        iMap.put(/*AudioDeviceInfo.TYPE_BUILDIN_SPEAKER_SAFE*/24, "SPEAKER_SAFE");
+        iMap.put(AudioDeviceInfo.TYPE_BUS, "BUS");
+        iMap.put(AudioDeviceInfo.TYPE_DOCK,  "DOC");
+        iMap.put(AudioDeviceInfo.TYPE_FM_TUNER, "FM_TUNER");
+        iMap.put(AudioDeviceInfo.TYPE_HDMI, "HDMI");
+        iMap.put(AudioDeviceInfo.TYPE_HDMI_ARC, "HDMI_ARC");
+        iMap.put(AudioDeviceInfo.TYPE_HEARING_AID, "HEARING_AID");
+        iMap.put(AudioDeviceInfo.TYPE_IP, "IP");
+        iMap.put(AudioDeviceInfo.TYPE_LINE_ANALOG, "LINE_ANALOG");
+        iMap.put(AudioDeviceInfo.TYPE_LINE_DIGITAL, "LINE_DIGITAL");
+        iMap.put(AudioDeviceInfo.TYPE_TELEPHONY, "TELEPHONY");
+        iMap.put(AudioDeviceInfo.TYPE_TV_TUNER, "TV_TUNER");
+        iMap.put(AudioDeviceInfo.TYPE_UNKNOWN, "UNKNOWN");
+        iMap.put(AudioDeviceInfo.TYPE_USB_ACCESSORY, "USB_ACCESSORY");
+        iMap.put(AudioDeviceInfo.TYPE_USB_DEVICE, "USB_DEVICE");
+        iMap.put(AudioDeviceInfo.TYPE_USB_HEADSET, "USB_HEADSET");
+        iMap.put(AudioDeviceInfo.TYPE_WIRED_HEADPHONES, "WIRED_HEADPHONES");
+        iMap.put(AudioDeviceInfo.TYPE_WIRED_HEADSET, "WIRED_HEADSET");
+        deviceTypes = Collections.unmodifiableMap(iMap);
+    }
+
+    private void updateOutputAudioDevices() {
+        AudioManager audioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            AudioDeviceInfo[] outputs = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS);
+            List<String> devices = new ArrayList<>();
+            outputAudioDevices.clear();
+            for (AudioDeviceInfo output : outputs) {
+                outputAudioDevices.add(output.getType());
+                devices.add(deviceTypes.get(output.getType()) + " : " + output.getProductName());
+            }
+            ArrayAdapter<String> adapter = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_item, devices);
+            mAmplifierOuputAudioDevices.setAdapter(adapter);
+            mAmplifierOuputAudioDevices.setSelection(outputAudioDevices.indexOf(AudioRelayService.currentOutputAudioDevice()));
+        }
     }
 
     private void updateBackgroundImage(AppStateViewModel.AppMode appMode) {
